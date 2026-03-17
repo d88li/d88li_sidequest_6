@@ -37,22 +37,24 @@ Two planned improvements:
 ## Assets
 
 Images
-assets/Apple.png [3]
-assets/background1.png [4]
-assets/background2.png [4]
-assets/background3.png [4]
-assets/background4b.png [4]
-assets/MiniSuspiciousMerchantB.png [2]
-assets/MiniThief.png [2]
+
+- assets/Apple.png [3]
+- assets/background1.png [4]
+- assets/background2.png [4]
+- assets/background3.png [4]
+- assets/background4b.png [4]
+- assets/MiniSuspiciousMerchantB.png [2]
+- assets/MiniThief.png [2]
 
 Audio
-assets/Audio/04_sack_open1.wav [1]
-assets/Audio/07_human_atk_sword_1.wav [1]
-assets/Audio/11_human_damage_2.wav [1]
-assets/Audio/12_human_jump_1.wav [1]
-assets/Audio/13_human_jump_land_2.wav [1]
-assets/Audio/14_human_death_spin.wav [1]
-assets/Audio/Goblins_Dance(Battle).wav [1]
+
+- assets/Audio/04_sack_open1.wav [1]
+- assets/Audio/07_human_atk_sword_1.wav [1]
+- assets/Audio/11_human_damage_2.wav [1]
+- assets/Audio/12_human_jump_1.wav [1]
+- assets/Audio/13_human_jump_land_2.wav [1]
+- assets/Audio/14_human_death_spin.wav [1]
+- assets/Audio/Goblins_Dance(Battle).wav [1]
 
 ---
 
