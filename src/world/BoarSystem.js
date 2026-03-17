@@ -24,7 +24,9 @@ export function buildBoarGroup(level) {
   // IMPORTANT:
   // Some p5play builds treat anis.w / anis.h as getter-only.
   // So we NEVER assume those assignments are safe.
-  const hasDefs = !!(level.assets?.boarAnis && typeof level.assets.boarAnis === "object");
+  const hasDefs = !!(
+    level.assets?.boarAnis && typeof level.assets.boarAnis === "object"
+  );
 
   if (hasDefs) {
     // Wire the sheet + anis defs on the GROUP (nice default for Tiles-spawned boars),
@@ -35,7 +37,10 @@ export function buildBoarGroup(level) {
     try {
       level.boar.addAnis(level.assets.boarAnis);
     } catch (err) {
-      console.warn("[BoarSystem] group.addAnis failed; boars may be static:", err);
+      console.warn(
+        "[BoarSystem] group.addAnis failed; boars may be static:",
+        err,
+      );
       level.boar.img = level.assets.boarImg;
     }
   } else {
@@ -187,16 +192,17 @@ export function rebuildBoarsFromSpawns(level) {
   const frameW = Number(tiles.frameW) || 32;
   const frameH = Number(tiles.frameH) || 32;
 
-  const boarW = Number(level.tuning.boar?.w ?? 18);
-  const boarH = Number(level.tuning.boar?.h ?? 12);
-  const boarHP = Number(level.tuning.boar?.hp ?? 3);
+  const boarW = Number(level.tuning.boar?.collider?.w ?? 18);
+  const boarH = Number(level.tuning.boar?.collider?.h ?? 12);
+  const boarHP = Number(level.tuning.boar?.stats?.hp ?? 3);
 
   for (const s of level.boarSpawns) {
     // Create with desired collider size (most reliable across builds)
     const e = new Sprite(s.x, s.y, boarW, boarH);
 
     // Sheet/anis (safe)
-    const hasDefs = level.assets?.boarAnis && typeof level.assets.boarAnis === "object";
+    const hasDefs =
+      level.assets?.boarAnis && typeof level.assets.boarAnis === "object";
     if (hasDefs) {
       safeAssignSpriteSheet(e, level.assets.boarImg);
       safeConfigureAniSheet(e, frameW, frameH, -8);
@@ -237,6 +243,9 @@ export function rebuildBoarsFromSpawns(level) {
 
     e.mirror.x = e.dir === -1;
 
+    wireOneBoarPhysics(level, e);
+    wireOneBoarPlayerCollision(level, e);
+
     level._setAniSafe?.(e, "run");
     level.boar.add(e);
   }
@@ -258,12 +267,13 @@ export function updateBoars(level) {
   const frameW = Number(tiles.frameW) || 32;
   const frameH = Number(tiles.frameH) || 32;
 
-  const boarSpeed = Number(level.tuning.boar?.speed ?? 0.6);
-  const boarW = Number(level.tuning.boar?.w ?? 18);
-  const boarH = Number(level.tuning.boar?.h ?? 12);
-  const boarHP = Number(level.tuning.boar?.hp ?? 3);
+  const boarSpeed = Number(level.tuning.boar?.move?.speed ?? 0.6);
+  const boarW = Number(level.tuning.boar?.collider?.w ?? 18);
+  const boarH = Number(level.tuning.boar?.collider?.h ?? 12);
+  const boarHP = Number(level.tuning.boar?.stats?.hp ?? 3);
 
-  const hasAnis = level.assets?.boarAnis && typeof level.assets.boarAnis === "object";
+  const hasAnis =
+    level.assets?.boarAnis && typeof level.assets.boarAnis === "object";
 
   // IMPORTANT:
   // We iterate over a snapshot so replacing/removing boars won't break the loop.
@@ -309,6 +319,8 @@ export function updateBoars(level) {
       }
 
       attachBoarProbes(level, e);
+      wireOneBoarPhysics(level, e);
+      wireOneBoarPlayerCollision(level, e);
 
       e.dir = e.dir === 1 || e.dir === -1 ? e.dir : random([-1, 1]);
       fixSpawnEdgeCase(level, e);
@@ -332,6 +344,21 @@ export function updateBoars(level) {
 
       // start in run pose
       level._setAniSafe?.(e, "run");
+    }
+
+    // -----------------------------
+    // Fire fail-safe
+    // Some runtime replacement paths can make overlap callbacks unreliable.
+    // Enforce fire death directly in the update loop.
+    // -----------------------------
+    if (!e.dead && !e.dying && boarTouchesFire(level, e)) {
+      e.hp = 0;
+      e.dying = true;
+      e.knockTimer = 0;
+      e.vel.x = 0;
+      e.collider = "none";
+      e.removeColliders();
+      level._setAniFrame0Safe?.(e, "throwPose");
     }
 
     // -----------------------------
@@ -432,15 +459,109 @@ export function updateBoars(level) {
     if (e.x < halfW) turnBoar(level, e, 1);
     if (e.x > level.bounds.levelW - halfW) turnBoar(level, e, -1);
 
-    const noGroundAhead = !frontProbeHasGroundAhead(level, e);
-    const frontHitsLeaf = e.frontProbe.overlapping(level.leaf);
-    const frontHitsFire = e.frontProbe.overlapping(level.fire);
+    // Multi-point ground detection: check 3 positions ahead
+    const noGroundAhead = !multiPointGroundDetection(level, e, boarW);
+    const frontProbeOverlapsFire = e.frontProbe.overlapping(level.fire);
+    const fireAheadBounds = fireAheadByBounds(level, e, boarW, boarH);
+    const fireBodyDetection = boarTouchesFire(level, e);
+    const frontHitsFire =
+      frontProbeOverlapsFire || fireAheadBounds || fireBodyDetection;
     const frontHitsWall = frontProbeHitsWall(level, e);
     const headSeesFire = e.footProbe.overlapping(level.fire);
 
-    const dangerNow = noGroundAhead || frontHitsLeaf || frontHitsFire || frontHitsWall || headSeesFire;
+    // Immediate turn if currently IN fire or in immediate danger
+    if (!e.dead && !e.dying && fireBodyDetection) {
+      turnBoar(level, e, -e.dir);
+      updateBoarProbes(level, e);
+    }
 
-    if (e.turnTimer === 0 && shouldTurnNow(e, dangerNow)) {
+    const dangerNow =
+      noGroundAhead || frontHitsFire || frontHitsWall || headSeesFire;
+    const blockedNow = Math.abs(e.vel.x ?? 0) < 0.01;
+
+    // Check if enemy is stuck between hazards (both directions have danger)
+    const leftProbeDir = -1;
+    const rightProbeDir = 1;
+    const checkBothDirs = () => {
+      const oldDir = e.dir;
+
+      // Check right direction
+      e.dir = rightProbeDir;
+      updateBoarProbes(level, e);
+      const rightHasFire =
+        level.fire &&
+        level.fire.length > 0 &&
+        (e.frontProbe.overlapping(level.fire) ||
+          fireAheadByBounds(level, e, boarW, boarH));
+      const rightNoGround = !multiPointGroundDetection(level, e, boarW);
+
+      // Check left direction
+      e.dir = leftProbeDir;
+      updateBoarProbes(level, e);
+      const leftHasFire =
+        level.fire &&
+        level.fire.length > 0 &&
+        (e.frontProbe.overlapping(level.fire) ||
+          fireAheadByBounds(level, e, boarW, boarH));
+      const leftNoGround = !multiPointGroundDetection(level, e, boarW);
+
+      e.dir = oldDir;
+      updateBoarProbes(level, e);
+
+      const bothDangerRight = rightHasFire || rightNoGround;
+      const bothDangerLeft = leftHasFire || leftNoGround;
+      return bothDangerRight && bothDangerLeft;
+    };
+
+    const stuckBetweenHazards = blockedNow && dangerNow && checkBothDirs();
+
+    // If truly stuck, force a turn and push harder
+    if (stuckBetweenHazards && e.turnTimer === 0) {
+      turnBoar(level, e, -e.dir);
+      e.x += e.dir * 4; // Push harder when stuck
+      updateBoarProbes(level, e);
+      continue;
+    }
+
+    // DEBUG: Comprehensive debug for bottommost platform
+    const isBottommost = e.y > 200;
+    if (isBottommost) {
+      if (!frontHitsFire && level.fire && level.fire.length > 0) {
+        const touchesFire = boarTouchesFire(level, e);
+        console.log(
+          `[BOAR FIRE] y=${e.y.toFixed(0)} dir=${e.dir} probe=${frontProbeOverlapsFire} bounds=${fireAheadBounds}%s touches=${touchesFire}`,
+        );
+      }
+      if (frontHitsWall) {
+        console.log(
+          `[BOAR WALL] y=${e.y.toFixed(0)} dir=${e.dir} HIT DETECTED - turning`,
+        );
+      }
+      if (
+        !frontHitsWall &&
+        (level.wallsL?.length > 0 || level.wallsR?.length > 0)
+      ) {
+        console.log(
+          `[BOAR WALL] y=${e.y.toFixed(0)} dir=${e.dir} NO DETECTION - nearby walls at:`,
+        );
+        for (const wall of level.wallsL || []) {
+          const dx = Math.abs(e.x - wall.x);
+          if (dx < 40)
+            console.log(
+              `  LEFT at (${wall.x.toFixed(0)}, ${wall.y.toFixed(0)})`,
+            );
+        }
+        for (const wall of level.wallsR || []) {
+          const dx = Math.abs(e.x - wall.x);
+          if (dx < 40)
+            console.log(
+              `  RIGHT at (${wall.x.toFixed(0)}, ${wall.y.toFixed(0)})`,
+            );
+        }
+      }
+    }
+
+    if (e.turnTimer === 0 && shouldTurnNow(e, dangerNow, blockedNow)) {
       turnBoar(level, e, -e.dir);
       updateBoarProbes(level, e);
       continue;
@@ -453,6 +574,32 @@ export function updateBoars(level) {
     // Extra safety: don't let "run" override terminal states
     if (!e.dead && !e.dying) level._setAniSafe?.(e, "run");
   }
+
+  // Post-loop: per-frame player damage check (fallback if collision callbacks miss)
+  // This ensures player gets hurt even if callback-based collision detection fails
+  if (level.playerCtrl?.sprite && level.boar) {
+    const playerSprite = level.playerCtrl.sprite;
+    const playerHalfW = (playerSprite?.width ?? playerSprite?.w ?? 18) / 2;
+    const playerHalfH = (playerSprite?.height ?? playerSprite?.h ?? 12) / 2;
+
+    for (const boar of level.boar) {
+      if (boar.dead || boar.dying) continue;
+
+      const boarHalfW = boarWidth(boar, 18) / 2;
+      const boarHalfH = boarHeight(boar, 12) / 2;
+
+      const overlapX =
+        Math.abs((playerSprite.x ?? 0) - (boar.x ?? 0)) <=
+        playerHalfW + boarHalfW;
+      const overlapY =
+        Math.abs((playerSprite.y ?? 0) - (boar.y ?? 0)) <=
+        playerHalfH + boarHalfH;
+
+      if (overlapX && overlapY) {
+        level.playerCtrl?.damageFromX?.(boar.x);
+      }
+    }
+  }
 }
 
 // -----------------------
@@ -464,8 +611,39 @@ function placeProbe(probe, x, y) {
   probe.y = y;
 }
 
+function wireOneBoarPhysics(level, e) {
+  if (!e) return;
+
+  if (level.ground) e.collides(level.ground);
+  if (level.groundDeep) e.collides(level.groundDeep);
+  if (level.platformsL) e.collides(level.platformsL);
+  if (level.platformsR) e.collides(level.platformsR);
+  if (level.wallsL) e.collides(level.wallsL);
+  if (level.wallsR) e.collides(level.wallsR);
+
+  if (level.fire) {
+    e.overlaps(level.fire, () => {
+      if (e.dead || e.dying) return;
+      e.hp = 0;
+      e.dying = true;
+      e.knockTimer = 0;
+      e.vel.x = 0;
+    });
+  }
+}
+
+function wireOneBoarPlayerCollision(level, e) {
+  const playerSprite = level.playerCtrl?.sprite;
+  if (!e || !playerSprite) return;
+
+  e.collides(playerSprite, () => {
+    if (e.dead || e.dying) return;
+    level.playerCtrl?.damageFromX?.(e.x);
+  });
+}
+
 export function attachBoarProbes(level, e) {
-  const size = Number(level.tuning.boar?.probeSize ?? 4);
+  const size = Number(level.tuning.boar?.probes?.size ?? 4);
 
   // Helper: sensor sprite that still has a collider
   const makeProbe = () => {
@@ -495,9 +673,9 @@ export function attachBoarProbes(level, e) {
 }
 
 function updateBoarProbes(level, e) {
-  const forward = level.tuning.boar?.probeForward ?? 10;
-  const frontY = level.tuning.boar?.probeFrontY ?? 10;
-  const headY = level.tuning.boar?.probeHeadY ?? 0;
+  const forward = Number(level.tuning.boar?.probes?.forward ?? 10);
+  const frontY = Number(level.tuning.boar?.probes?.frontY ?? 0);
+  const headY = Number(level.tuning.boar?.probes?.headY ?? 0);
 
   const forwardX = e.x + e.dir * forward;
   placeProbe(e.frontProbe, forwardX, e.y + frontY);
@@ -505,7 +683,10 @@ function updateBoarProbes(level, e) {
 }
 
 function updateGroundProbe(level, e, fallbackH) {
-  const h = boarHeight(e, Number(fallbackH ?? level.tuning.boar?.h ?? 12));
+  const h = boarHeight(
+    e,
+    Number(fallbackH ?? level.tuning.boar?.collider?.h ?? 12),
+  );
   placeProbe(e.groundProbe, e.x, e.y + h / 2 + 4);
 }
 
@@ -519,9 +700,100 @@ function frontProbeHasGroundAhead(level, e) {
   );
 }
 
+function multiPointGroundDetection(level, e, fallbackW) {
+  // Check ground at 3 horizontal points ahead: left, center, right of the boar
+  // This catches platform edges that a single probe might miss
+  if (!e) return true;
+
+  const forward = Number(level.tuning.boar?.probes?.forward ?? 10);
+  const footY = Math.max(0, (e.y ?? 0) + 4); // Slightly below boar center
+  const halfW = boarWidth(e, fallbackW) / 2;
+
+  // Check 3 points: left edge, center, right edge of boar width ahead
+  const checkPoints = [
+    (e.x ?? 0) + (e.dir ?? 1) * forward - halfW, // left edge
+    (e.x ?? 0) + (e.dir ?? 1) * forward, // center
+    (e.x ?? 0) + (e.dir ?? 1) * forward + halfW, // right edge
+  ];
+
+  // Create temporary test sprite to check ground at these points
+  for (const checkX of checkPoints) {
+    // Check if there's ground at this position by testing overlap
+    const hasGround =
+      testPointOverlapsGround(level, checkX, footY) ||
+      testPointOverlapsGround(level, checkX, footY + 4) ||
+      testPointOverlapsGround(level, checkX, footY + 8);
+
+    if (!hasGround) {
+      // At least one point has no ground ahead = hazard
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function testPointOverlapsGround(level, x, y) {
+  // Test if a point at (x, y) overlaps with any ground group
+  // We do this by checking if the point is within any ground sprite's bounds
+  for (const group of [
+    level.ground,
+    level.groundDeep,
+    level.platformsL,
+    level.platformsR,
+  ]) {
+    if (!group) continue;
+    for (const sprite of group) {
+      if (!sprite || sprite?.visible === false) continue;
+      const halfW = spriteHalfW(sprite, 12);
+      const halfH = spriteHalfH(sprite, 12);
+      const overlapX = Math.abs(x - (sprite.x ?? 0)) <= halfW + 2;
+      const overlapY = Math.abs(y - (sprite.y ?? 0)) <= halfH + 2;
+      if (overlapX && overlapY) return true;
+    }
+  }
+  return false;
+}
+
 function frontProbeHitsWall(level, e) {
   const p = e.frontProbe;
-  return p.overlapping(level.wallsL) || p.overlapping(level.wallsR);
+  const probeHits = p.overlapping(level.wallsL) || p.overlapping(level.wallsR);
+
+  // Geometry-based fallback if probe fails
+  if (!probeHits) {
+    return wallAheadByBounds(level, e);
+  }
+
+  return probeHits;
+}
+
+function wallAheadByBounds(level, e) {
+  if (!e) return false;
+
+  const forward = Number(level.tuning.boar?.probes?.forward ?? 10);
+  const probeSize = Number(level.tuning.boar?.probes?.size ?? 4);
+  const frontY = Number(level.tuning.boar?.probes?.frontY ?? 0);
+
+  const probeX = (e.x ?? 0) + (e.dir ?? 1) * forward;
+  const probeY = (e.y ?? 0) + frontY;
+  const pHalf = probeSize / 2;
+
+  // Check both wall groups
+  for (const walls of [level.wallsL, level.wallsR]) {
+    if (!walls) continue;
+    for (const wall of walls) {
+      if (wall?.active === false || wall?.visible === false) continue;
+
+      const wHalfW = spriteHalfW(wall, 12);
+      const wHalfH = spriteHalfH(wall, 24);
+
+      const overlapX = Math.abs(probeX - (wall.x ?? 0)) <= pHalf + wHalfW;
+      const overlapY = Math.abs(probeY - (wall.y ?? 0)) <= pHalf + wHalfH;
+      if (overlapX && overlapY) return true;
+    }
+  }
+
+  return false;
 }
 
 function boarGrounded(level, e) {
@@ -534,19 +806,82 @@ function boarGrounded(level, e) {
   );
 }
 
-function shouldTurnNow(e, dangerNow) {
+function boarTouchesFire(level, e) {
+  if (!level.fire || !e) return false;
+
+  const bodyTouchesViaPhysics =
+    typeof e.overlapping === "function" ? e.overlapping(level.fire) : false;
+  if (bodyTouchesViaPhysics) return true;
+
+  const eHalfW = boarWidth(e, 18) / 2;
+  const eHalfH = boarHeight(e, 12) / 2;
+
+  for (const fire of level.fire) {
+    if (fire?.active === false || fire?.visible === false) continue;
+
+    const fHalfW = spriteHalfW(fire, 18);
+    const fHalfH = spriteHalfH(fire, 16);
+
+    const overlapX = Math.abs((e.x ?? 0) - (fire.x ?? 0)) <= eHalfW + fHalfW;
+    const overlapY = Math.abs((e.y ?? 0) - (fire.y ?? 0)) <= eHalfH + fHalfH;
+    if (overlapX && overlapY) return true;
+  }
+
+  return false;
+}
+
+function fireAheadByBounds(level, e, fallbackW, fallbackH) {
+  if (!level.fire || !e) return false;
+
+  const forward = Number(level.tuning.boar?.probes?.forward ?? 10);
+  const frontY = Number(level.tuning.boar?.probes?.frontY ?? 0);
+  const probeSize = Number(level.tuning.boar?.probes?.size ?? 4);
+
+  const probeX = (e.x ?? 0) + (e.dir ?? 1) * forward;
+  const probeY = (e.y ?? 0) + frontY;
+  const pHalf = probeSize / 2;
+
+  for (const fire of level.fire) {
+    if (fire?.active === false || fire?.visible === false) continue;
+
+    const fHalfW = spriteHalfW(fire, 18);
+    const fHalfH = spriteHalfH(fire, 16);
+
+    const overlapX = Math.abs(probeX - (fire.x ?? 0)) <= pHalf + fHalfW;
+    const overlapY = Math.abs(probeY - (fire.y ?? 0)) <= pHalf + fHalfH;
+    if (overlapX && overlapY) return true;
+  }
+
+  return false;
+}
+
+function spriteHalfW(sprite, fallback = 18) {
+  const w = Number(sprite?.width ?? sprite?.w ?? fallback) || fallback;
+  return w / 2;
+}
+
+function spriteHalfH(sprite, fallback = 16) {
+  const h = Number(sprite?.height ?? sprite?.h ?? fallback) || fallback;
+  return h / 2;
+}
+
+function shouldTurnNow(e, dangerNow, blockedNow = false) {
+  // Turn on rising edge of danger (when we newly detect danger)
   const risingEdge = dangerNow && !e.wasDanger;
+  // Also turn if blocked and in danger (stuck against obstacle)
+  const stuckInDanger = dangerNow && blockedNow;
+  // Note: wasDanger is updated at END of frame, so we don't reset it here
   e.wasDanger = dangerNow;
-  return risingEdge;
+  return risingEdge || stuckInDanger;
 }
 
 function turnBoar(level, e, newDir) {
-  const cooldown = level.tuning.boar?.turnCooldown ?? 12;
+  const cooldown = Number(level.tuning.boar?.turning?.turnCooldownFrames ?? 6);
   if (e.turnTimer > 0) return;
 
   e.dir = newDir;
   e.turnTimer = cooldown;
-  e.x += e.dir * 6;
+  e.x += e.dir * 2;
   e.vel.x = 0;
 }
 

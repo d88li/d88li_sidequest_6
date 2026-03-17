@@ -20,9 +20,13 @@ export async function loadAssets(levelPkg, tuningDoc) {
   // IMPORTANT:
   // loadImage() is "preload-safe" only if p5 is actually tracking it inside preload().
   // To make this robust even if your boot flow uses async/await, we wrap loadImage in a Promise.
-  const playerImg = await loadImageAsync("assets/foxSpriteSheet.png");
-  const boarImg = await loadImageAsync("assets/boarSpriteSheet.png");
-  const leafImg = await loadImageAsync("assets/leafSpriteSheet.png");
+  const playerSpriteSheet =
+    tuningDoc?.player?.spriteSheet || "assets/MiniThief.png"; // [2]
+  const playerImg = await loadImageAsync(playerSpriteSheet);
+  const boarSpriteSheet =
+    tuningDoc?.boar?.spriteSheet || "assets/MiniSuspiciousMerchantB.png"; // [2]
+  const boarImg = await loadImageAsync(boarSpriteSheet);
+  const leafImg = await loadImageAsync("assets/Apple.png"); // [3]
   const fireImg = await loadImageAsync("assets/fireSpriteSheet.png");
 
   const groundTileImg = await loadImageAsync("assets/groundTile.png");
@@ -42,13 +46,21 @@ export async function loadAssets(levelPkg, tuningDoc) {
   // ---- anis ----
   // Prefer tuning-driven animations if present, else fallback to monolith defaults.
   // ALSO: inject a spriteSheet reference by default so addAnis never tries to load "undefined".
-  let playerAnis = buildAnis(tuningDoc?.player?.animations, defaultPlayerAnis(), {
-    spriteSheet: playerImg,
-  });
+  let playerAnis = buildAnis(
+    tuningDoc?.player?.animations ?? tuningDoc?.player?.anims,
+    defaultPlayerAnis(),
+    {
+      spriteSheet: playerImg,
+    },
+  );
 
-  let boarAnis = buildAnis(tuningDoc?.boar?.animations, defaultBoarAnis(), {
-    spriteSheet: boarImg,
-  });
+  let boarAnis = buildAnis(
+    tuningDoc?.boar?.animations ?? tuningDoc?.boar?.anims,
+    defaultBoarAnis(),
+    {
+      spriteSheet: boarImg,
+    },
+  );
 
   // If tuning.json uses per-animation "img" fields (strings), preload them here and replace with p5.Images.
   // This prevents runtime XHRs and avoids /undefined crashes.
@@ -101,7 +113,8 @@ export async function loadAssets(levelPkg, tuningDoc) {
  * - keeps other keys intact
  */
 function buildAnis(tuningAnis, fallbackAnis, inject = {}) {
-  const src = tuningAnis && typeof tuningAnis === "object" ? tuningAnis : fallbackAnis;
+  const src =
+    tuningAnis && typeof tuningAnis === "object" ? tuningAnis : fallbackAnis;
   const out = {};
 
   for (const [name, def] of Object.entries(src)) {
@@ -153,20 +166,29 @@ function defaultBoarAnis() {
 // helpers
 // ------------------------
 
-function loadImageAsync(path) {
+export function loadImageAsync(path) {
   if (!path) {
     // This is the exact scenario that led to GET /undefined.
-    throw new Error(`[AssetLoader] loadImageAsync called with invalid path: ${path}`);
+    throw new Error(
+      `[AssetLoader] loadImageAsync called with invalid path: ${path}`,
+    );
   }
   return new Promise((resolve, reject) => {
     try {
       loadImage(
         path,
         (img) => resolve(img),
-        (err) => reject(new Error(`[AssetLoader] Failed to load image "${path}": ${err}`)),
+        (err) =>
+          reject(
+            new Error(`[AssetLoader] Failed to load image "${path}": ${err}`),
+          ),
       );
     } catch (e) {
-      reject(new Error(`[AssetLoader] loadImage("${path}") threw: ${e?.message ?? e}`));
+      reject(
+        new Error(
+          `[AssetLoader] loadImage("${path}") threw: ${e?.message ?? e}`,
+        ),
+      );
     }
   });
 }
@@ -177,7 +199,7 @@ async function loadBackgrounds(levelPkg) {
   // levelPkg.parallaxLayers = [{ key:"bgFar", src:"assets/..." }, ...]
   // Your levels.json stores parallax in: level.view.parallax
   const layers = levelPkg?.level?.view?.parallax || levelPkg?.parallaxLayers;
-  
+
   if (Array.isArray(layers) && layers.length > 0) {
     const bg = {};
     for (const layer of layers) {
@@ -194,9 +216,9 @@ async function loadBackgrounds(levelPkg) {
 
   // Default fallback set
   return {
-    bgFar: await loadImageAsync("assets/background_layer_1.png"),
-    bgMid: await loadImageAsync("assets/background_layer_2.png"),
-    bgFore: await loadImageAsync("assets/background_layer_3.png"),
+    bgFar: await loadImageAsync("assets/background1.png"), // [4]
+    bgMid: await loadImageAsync("assets/background2.png"), // [4]
+    bgFore: await loadImageAsync("assets/background4b.png"), // [4]
   };
 }
 
@@ -223,7 +245,9 @@ async function resolveAniImages(anis, label = "entity") {
     // (This makes tuning flexible and prevents p5play from trying to load "undefined".)
     if (typeof d.spriteSheet === "string") {
       if (!d.spriteSheet) {
-        throw new Error(`[AssetLoader] ${label}.${name}.spriteSheet is an empty string`);
+        throw new Error(
+          `[AssetLoader] ${label}.${name}.spriteSheet is an empty string`,
+        );
       }
       d.spriteSheet = await loadImageAsync(d.spriteSheet);
     }
@@ -294,7 +318,9 @@ function validateAssets(bundle) {
         );
       }
       if ("img" in def && (def.img === undefined || def.img === null)) {
-        throw new Error(`[AssetLoader] ${label}Anis.${name}.img is undefined/null`);
+        throw new Error(
+          `[AssetLoader] ${label}Anis.${name}.img is undefined/null`,
+        );
       }
     }
   };

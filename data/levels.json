@@ -43,9 +43,9 @@
         "cameraLerp": 0.1,
 
         "parallax": [
-          { "img": "assets/background_layer_1.png", "speed": 0.2 },
-          { "img": "assets/background_layer_2.png", "speed": 0.4 },
-          { "img": "assets/background_layer_3.png", "speed": 0.6 }
+          { "img": "assets/background1.png", "speed": 0.2 },
+          { "img": "assets/background2.png", "speed": 0.4 },
+          { "img": "assets/background4b.png", "speed": 0.6 }
         ]
       },
 

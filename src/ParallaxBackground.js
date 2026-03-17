@@ -32,6 +32,7 @@ export class ParallaxBackground {
   draw({ cameraX, viewW, viewH }) {
     camera.off();
     drawingContext.imageSmoothingEnabled = false;
+    imageMode(CORNER);
 
     for (const layer of this.layers) {
       const { img, factor = 1 } = layer;
@@ -39,15 +40,24 @@ export class ParallaxBackground {
 
       const offsetX = -cameraX * factor;
 
-      // tile horizontally
-      const imgW = img.width;
-      const imgH = img.height;
+      // Scale image to fit viewport height, maintaining aspect ratio
+      const sourceW = img.width;
+      const sourceH = img.height;
+      const displayH = viewH;
+      const displayW = (sourceW / sourceH) * displayH; // Maintain aspect ratio
 
-      // ensure enough tiles to fill width
-      const startX = Math.floor(offsetX / imgW) * imgW;
+      // Calculate tile-aligned start position
+      const alignedStart = Math.floor(offsetX / displayW) * displayW;
+      // Preserve the fractional offset for smooth scrolling
+      const fractionalOffset = offsetX - alignedStart;
 
-      for (let x = startX; x < viewW; x += imgW) {
-        image(img, Math.round(x), 0, imgW, viewH);
+      // Draw tiles, starting one tile before the visible area to avoid gaps
+      for (
+        let x = alignedStart + fractionalOffset - displayW;
+        x < viewW + displayW;
+        x += displayW
+      ) {
+        image(img, x, 0, displayW, displayH);
       }
     }
 

@@ -1,5 +1,6 @@
 {
   "player": {
+    "spriteSheet": "assets/MiniThief.png",
     "frameW": 32,
     "frameH": 32,
 
@@ -56,25 +57,26 @@
         "frame": 0
       },
       "attack": {
-        "row": 3,
+        "row": 5,
         "frames": 6,
         "frameDelay": 2
       },
       "hurtPose": {
-        "row": 5,
-        "frames": 4,
+        "row": 6,
+        "frames": 2,
         "hold": true,
         "frame": 1
       },
       "death": {
-        "row": 5,
-        "frames": 4,
+        "row": 7,
+        "frames": 5,
         "frameDelay": 16
       }
     }
   },
 
   "boar": {
+    "spriteSheet": "assets/MiniSuspiciousMerchantB.png",
     "frameW": 32,
     "frameH": 32,
 
@@ -97,8 +99,8 @@
     },
 
     "turning": {
-      "turnCooldownFrames": 12,
-      "worldBoundsNudgePx": 6
+      "turnCooldownFrames": 6,
+      "worldBoundsNudgePx": 2
     },
 
     "hit": {
@@ -110,7 +112,7 @@
 
     "probes": {
       "forward": 10,
-      "frontY": 10,
+      "frontY": 0,
       "headY": 0,
       "size": 4
     },
@@ -146,13 +148,13 @@
 
     "anisOffset": {
       "x": 2,
-      "y": -4
+      "y": 4
     },
 
     "anims": {
       "idle": {
         "row": 0,
-        "frames": 5,
+        "frames": 17,
         "frameDelay": 6
       }
     },

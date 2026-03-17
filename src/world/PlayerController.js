@@ -14,6 +14,7 @@ export class PlayerController {
   constructor(playerEntity, opts = {}) {
     this.player = playerEntity;
     this.events = opts.events || null;
+    this.wasAirborne = false; // Track jump state for landing detection
   }
 
   // handy passthrough for old code that expects playerCtrl.sprite
@@ -23,6 +24,7 @@ export class PlayerController {
 
   reset() {
     this.player?.reset();
+    this.wasAirborne = false;
   }
 
   update({ input, solids, bounds, won }) {
@@ -35,13 +37,24 @@ export class PlayerController {
     const grounded = p.isGrounded(solids);
 
     // -----------------------
+    // LANDING detection (emit when transitioning from airborne to grounded)
+    // -----------------------
+    if (this.wasAirborne && grounded && !p.dead && !won) {
+      this.events?.emit("player:landed", {});
+    }
+    this.wasAirborne = !grounded; // Track airborne state for next frame
+
+    // -----------------------
     // DEATH LATCH (fixes "never reaches lose screen")
     // -----------------------
     // Latch death after landing. (Do NOT require knockTimer==0; that can prevent latching.)
     if (!p.dead && p.pendingDeath && grounded) {
       p.dead = true;
       p.pendingDeath = false;
-      this.events?.emit("player:died", { health: p.health, maxHealth: p.maxHealth });
+      this.events?.emit("player:died", {
+        health: p.health,
+        maxHealth: p.maxHealth,
+      });
     }
 
     // if dead or won, freeze horizontal control and just animate
@@ -56,7 +69,13 @@ export class PlayerController {
     // ATTACK start
     // -----------------------
     const wantAttack = input?.attackPressed;
-    if (p.knockTimer === 0 && !p.pendingDeath && grounded && !p.attacking && wantAttack) {
+    if (
+      p.knockTimer === 0 &&
+      !p.pendingDeath &&
+      grounded &&
+      !p.attacking &&
+      wantAttack
+    ) {
       p.startAttack();
       this.events?.emit("player:attacked", {});
     }

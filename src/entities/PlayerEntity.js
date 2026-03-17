@@ -17,9 +17,17 @@ export class PlayerEntity {
     this.assets = assets;
 
     this.tuning = pkg.tuning || {};
+    this.playerCfg = this.tuning.player || {};
     this.tilesCfg = pkg.tiles || {};
     this.bounds = pkg.bounds || {};
     this.levelData = pkg.level || {};
+
+    const moveCfg = this.playerCfg.move || {};
+    const jumpCfg = this.playerCfg.jump || {};
+    const attackCfg = this.playerCfg.attack || {};
+    const damageCfg = this.playerCfg.damage || {};
+    const colliderCfg = this.playerCfg.collider || {};
+    const anisOffsetCfg = this.playerCfg.anisOffset || {};
 
     // sprites
     this.sprite = null;
@@ -34,7 +42,9 @@ export class PlayerEntity {
     this.startY = ps.y;
 
     // stats
-    this.maxHealth = Number(this.tuning.player?.maxHealth ?? 3);
+    this.maxHealth = Number(
+      damageCfg.maxHealth ?? this.playerCfg.maxHealth ?? 3,
+    );
     this.health = this.maxHealth;
 
     // state
@@ -54,24 +64,42 @@ export class PlayerEntity {
     this.attackHitThisSwing = false;
 
     // tuning defaults
-    this.MOVE_SPEED = Number(this.tuning.player?.moveSpeed ?? 1.5);
-    this.JUMP_STRENGTH = Number(this.tuning.player?.jumpStrength ?? 4.5);
+    this.MOVE_SPEED = Number(moveCfg.speed ?? this.playerCfg.moveSpeed ?? 1.5);
+    this.JUMP_STRENGTH = Number(
+      jumpCfg.strength ?? this.playerCfg.jumpStrength ?? 4.5,
+    );
 
-    this.INVULN_FRAMES = Number(this.tuning.player?.invulnFrames ?? 45);
-    this.KNOCK_FRAMES = Number(this.tuning.player?.knockFrames ?? 30);
+    this.INVULN_FRAMES = Number(
+      damageCfg.invulnFrames ?? this.playerCfg.invulnFrames ?? 45,
+    );
+    this.KNOCK_FRAMES = Number(
+      damageCfg.knockFrames ?? this.playerCfg.knockFrames ?? 30,
+    );
 
-    this.KNOCKBACK_X = Number(this.tuning.player?.knockbackX ?? 2.0);
-    this.KNOCKBACK_Y = Number(this.tuning.player?.knockbackY ?? 3.2);
+    this.KNOCKBACK_X = Number(
+      damageCfg.knockbackX ?? this.playerCfg.knockbackX ?? 2.0,
+    );
+    this.KNOCKBACK_Y = Number(
+      damageCfg.knockbackY ?? this.playerCfg.knockbackY ?? 3.2,
+    );
 
-    this.COLLIDER_W = Number(this.tuning.player?.w ?? 18);
-    this.COLLIDER_H = Number(this.tuning.player?.h ?? 12);
+    this.COLLIDER_W = Number(colliderCfg.w ?? this.playerCfg.w ?? 18);
+    this.COLLIDER_H = Number(colliderCfg.h ?? this.playerCfg.h ?? 12);
 
-    this.ANI_OFFSET_Y = Number(this.tuning.player?.aniOffsetY ?? -8);
+    this.ANI_OFFSET_Y = Number(
+      anisOffsetCfg.y ?? this.playerCfg.aniOffsetY ?? -8,
+    );
 
     // attack window
-    this.ATTACK_START = Number(this.tuning.player?.attackStartFrame ?? 4);
-    this.ATTACK_END = Number(this.tuning.player?.attackEndFrame ?? 8);
-    this.ATTACK_FINISH = Number(this.tuning.player?.attackFinishFrame ?? 12);
+    this.ATTACK_START = Number(
+      attackCfg.activeFrames?.[0] ?? this.playerCfg.attackStartFrame ?? 4,
+    );
+    this.ATTACK_END = Number(
+      attackCfg.activeFrames?.[1] ?? this.playerCfg.attackEndFrame ?? 8,
+    );
+    this.ATTACK_FINISH = Number(
+      attackCfg.endFrame ?? this.playerCfg.attackFinishFrame ?? 12,
+    );
   }
 
   // -----------------------
@@ -106,7 +134,8 @@ export class PlayerEntity {
   // build / reset
   // -----------------------
   buildSprites() {
-    const { frameW = 32, frameH = 32 } = this.tilesCfg;
+    const frameW = Number(this.playerCfg.frameW ?? this.tilesCfg.frameW ?? 32);
+    const frameH = Number(this.playerCfg.frameH ?? this.tilesCfg.frameH ?? 32);
 
     this.sprite = new Sprite(this.startX, this.startY, frameW, frameH);
     this.sprite.rotationLock = true;
@@ -238,7 +267,8 @@ export class PlayerEntity {
   // animation (visual state)
   // -----------------------
   applyAnimation({ grounded, won }) {
-    if (!this.sprite?.anis || Object.keys(this.sprite.anis).length === 0) return;
+    if (!this.sprite?.anis || Object.keys(this.sprite.anis).length === 0)
+      return;
 
     // ---- DEAD: play once, then hold last frame (prevents infinite loop)
     if (this.dead) {
@@ -310,7 +340,8 @@ export class PlayerEntity {
     if (!this.sprite) return;
 
     if (!this.dead && this.invulnTimer > 0) {
-      this.sprite.tint = Math.floor(this.invulnTimer / 4) % 2 === 0 ? "#ff5050" : "#ffffff";
+      this.sprite.tint =
+        Math.floor(this.invulnTimer / 4) % 2 === 0 ? "#ff5050" : "#ffffff";
     } else {
       this.sprite.tint = "#ffffff";
     }

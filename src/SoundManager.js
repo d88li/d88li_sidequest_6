@@ -18,13 +18,71 @@
 export class SoundManager {
   constructor() {
     this.sfx = {};
+    this.music = null;
   }
 
   load(name, path) {
-    this.sfx[name] = loadSound(path);
+    try {
+      this.sfx[name] = loadSound(path);
+    } catch (e) {
+      console.warn(`Failed to load sound "${name}":`, e);
+      this.sfx[name] = null;
+    }
+  }
+
+  loadMusic(name, path) {
+    try {
+      this.sfx[name] = loadSound(path);
+    } catch (e) {
+      console.warn(`Failed to load music "${name}":`, e);
+      this.sfx[name] = null;
+    }
   }
 
   play(name) {
-    this.sfx[name]?.play();
+    try {
+      const sound = this.sfx[name];
+      if (sound && typeof sound.play === "function") {
+        sound.play();
+      }
+    } catch (e) {
+      console.warn(`Failed to play sound "${name}":`, e);
+    }
+  }
+
+  playMusic(name) {
+    try {
+      // Stop current music if any
+      if (
+        this.music &&
+        typeof this.music.isPlaying === "function" &&
+        this.music.isPlaying?.()
+      ) {
+        this.music.stop();
+      }
+
+      const sound = this.sfx[name];
+      if (sound && typeof sound.loop === "function") {
+        sound.loop();
+        this.music = sound;
+      }
+    } catch (e) {
+      console.warn(`Failed to play music "${name}":`, e);
+    }
+  }
+
+  stopMusic() {
+    try {
+      if (
+        this.music &&
+        typeof this.music.isPlaying === "function" &&
+        this.music.isPlaying?.()
+      ) {
+        this.music.stop();
+      }
+      this.music = null;
+    } catch (e) {
+      console.warn("Failed to stop music:", e);
+    }
   }
 }

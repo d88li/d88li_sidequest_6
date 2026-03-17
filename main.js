@@ -36,8 +36,11 @@
 import { LevelLoader } from "./src/LevelLoader.js";
 import { Game } from "./src/Game.js";
 import { ParallaxBackground } from "./src/ParallaxBackground.js";
-import { loadAssets } from "./src/AssetLoader.js";
-import { applyIntegerScale, installResizeHandler } from "./src/utils/IntegerScale.js";
+import { loadAssets, loadImageAsync } from "./src/AssetLoader.js";
+import {
+  applyIntegerScale,
+  installResizeHandler,
+} from "./src/utils/IntegerScale.js";
 
 import { CameraController } from "./src/CameraController.js";
 import { InputManager } from "./src/InputManager.js";
@@ -129,15 +132,27 @@ async function boot() {
   // --- Audio registry ---
   // (AudioContext may still be locked until the user clicks/presses a key.)
   soundManager = new SoundManager();
+  try {
+    soundManager.load("jump", "assets/Audio/12_human_jump_1.wav"); // [1]
+    soundManager.load("jumpLand", "assets/Audio/13_human_jump_land_2.wav"); // [1]
+    soundManager.load("attack", "assets/Audio/07_human_atk_sword_1.wav"); // [1]
+    soundManager.load("damage", "assets/Audio/11_human_damage_2.wav"); // [1]
+    soundManager.load("death", "assets/Audio/14_human_death_spin.wav"); // [1]
+    soundManager.load("apple", "assets/Audio/04_sack_open_1.wav"); // [1]
+    soundManager.loadMusic("bgm", "assets/Audio/Goblins_Dance_(Battle).wav"); // [1]
+  } catch (e) {
+    console.warn("Audio loading warning:", e);
+  }
 
   // --- Parallax layer defs (VIEW) ---
   const defs = levelPkg.level?.view?.parallax ?? [];
-  parallaxLayers = defs
-    .map((d) => ({
-      img: loadImage(d.img),
+  parallaxLayers = await Promise.all(
+    defs.map(async (d) => ({
+      img: await loadImageAsync(d.img),
       factor: Number(d.speed ?? 0),
-    }))
-    .filter((l) => l.img);
+    })),
+  );
+  parallaxLayers = parallaxLayers.filter((l) => l.img);
 
   // Now that all data is ready, build the WORLD + VIEW runtime.
   initRuntime();
@@ -208,6 +223,25 @@ function initRuntime() {
 
   // VIEW: parallax background renderer
   parallax = new ParallaxBackground(parallaxLayers);
+
+  // Defer music startup until after user interaction (AudioContext is locked until then)
+  let musicStarted = false;
+  const startMusic = () => {
+    if (!musicStarted) {
+      musicStarted = true;
+      try {
+        soundManager?.playMusic("bgm");
+      } catch (e) {
+        console.warn("Music playback failed:", e);
+      }
+      // Remove listeners after first interaction
+      document.removeEventListener("click", startMusic);
+      document.removeEventListener("keydown", startMusic);
+    }
+  };
+
+  document.addEventListener("click", startMusic);
+  document.addEventListener("keydown", startMusic);
 
   loop();
 }
